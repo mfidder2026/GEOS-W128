@@ -299,7 +299,7 @@ def build_w128(a):
 
 # GEOS 128 system disks in disks/ (not in this repository), most important
 # first; what does not fit on the chosen format stays off
-W128_SOURCES = ["1a_system", "2b_apps", "3a_write_utils", "1b_demo",
+W128_SOURCES = ["1a_system", "2b_apps", "3a_write_utils",
                 "3b_geospell"]
 W128_DRIVERS = {"d64": "drv1541", "d71": "drv1571", "d81": "drv1581"}
 # the boot files are replaced by our kernal; deskTop would load an input
@@ -307,6 +307,14 @@ W128_DRIVERS = {"d64": "drv1541", "d71": "drv1571", "d81": "drv1581"}
 W128_SKIP = [b"GEOS", b"GEOS BOOT", b"GEOS KERNAL"]
 W128_SKIP_TYPES = (10, 15)      # INPUT_DEVICE, INPUT_128
 W128_RESERVE = 40               # blocks kept free for the user
+# your own C128 programs in disks/extra/, right after our application so
+# that they are on deskTop's first page: (file, names on a D64 or None for a
+# CVT file, versions on the system disks that they replace)
+W128_EXTRA = [
+    ("geowrite128-4.cvt", None, [b"GEOWRITE 128"]),
+    ("GEOS - Geopaint128 (19xx)(-).d64", [b"GeoPaint 128"], [b"GEOPAINT"]),
+    ("GeoCalc 128.d64", [b"GEOCALC 128", b"New Car"], []),
+]
 
 
 def post_w128(bd, comp, fmt, base_only=False):
@@ -325,19 +333,33 @@ def post_w128(bd, comp, fmt, base_only=False):
     app = os.path.join(ROOT, "apps", "wic64")
     make_icon(os.path.join(app, "wic64.icon"),
               os.path.join(ROOT, "build", "icons", "wic64.raw"))
-    objdir = os.path.join(bd, "apps", "wic64")
-    os.makedirs(objdir, exist_ok=True)
-    cvt = os.path.join(bd, "wic64.cvt")
-    r = subprocess.run([CL65, "-t", "geos-cbm", "-O", "--obj-path", objdir,
-                        "-o", cvt, os.path.join(app, "wic64appres.grc"),
-                        os.path.join(app, "wic64app.c"),
-                        os.path.join(ROOT, "apps", "common", "wic64.s")],
-                       cwd=ROOT, capture_output=True, text=True, env=env)
-    if r.returncode:
-        sys.exit(r.stdout + r.stderr)
-    disk.add_cvt(cvt)
+
+    def own_app(name, res, src):
+        objdir = os.path.join(bd, "apps", name)
+        os.makedirs(objdir, exist_ok=True)
+        cvt = os.path.join(bd, name + ".cvt")
+        r = subprocess.run([CL65, "-t", "geos-cbm", "-O", "--obj-path", objdir,
+                            "-o", cvt, os.path.join(app, res),
+                            os.path.join(app, src),
+                            os.path.join(ROOT, "apps", "common", "wic64.s")],
+                           cwd=ROOT, capture_output=True, text=True, env=env)
+        if r.returncode:
+            sys.exit(r.stdout + r.stderr)
+        disk.add_cvt(cvt)
+
+    own_app("wic64", "wic64appres.grc", "wic64app.c")
     seen = set()
     left_out = 0
+    for name, files, replaces in [] if base_only else W128_EXTRA:
+        src = os.path.join(ROOT, "disks", "extra", name)
+        if not os.path.exists(src):
+            continue
+        if files is None:
+            disk.add_cvt(src)
+        else:
+            D.copy_named(disk, src, files)
+        seen.update(n.upper() for n in replaces)
+    own_app("wictest", "wictestres.grc", "wictest.c")
     for s in [] if base_only else W128_SOURCES:
         src = os.path.join(ROOT, "disks", f"geos_128_2_0_{s}.d64")
         for name, e, h, body in D.read_d64_files(src):

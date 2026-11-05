@@ -146,9 +146,10 @@ static void set_zone(void)
                         "2 = GMT+1, 3 = GMT+2") == CANCEL)
         return;
     n = atoi(zone);
-    /* low digit first, the way the WiC64 expects it */
-    payload[0] = '0' + n % 10;
-    payload[1] = '0' + n / 10;
+    /* low digit first. Plain values, not ASCII digits: the firmware computes
+       high * 10 + low from the raw bytes, whatever its documentation says */
+    payload[0] = n % 10;
+    payload[1] = n / 10;
     st = wic_call(WIC_SET_TIMEZONE, payload, 2, rx, sizeof rx);
     if (st != WIC_OK) {
         message(reason(st));

@@ -1,0 +1,8 @@
+; resource file for wictest.c
+
+HEADER APPLICATION "WiCTest" "WiCTest" "V1.0" {
+dostype USR
+author "GEOS-W128"
+mode 80only
+info "Tests your WiC64: all commands, large transfers, errors, time zone and TCP. Shows PASS or FAIL per test."
+}

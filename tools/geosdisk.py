@@ -158,11 +158,11 @@ class Disk:
         self.img[slot:slot + 30] = e
 
     def add_cvt(self, path):
-        """A CVT file. SEQ only: our own applications are all SEQ."""
         d = open(path, "rb").read()
         if d[21] != 0:
-            sys.exit(f"{path}: only SEQ CVT files are supported")
-        self.add_seq(d[:30], d[254:508], d[508:])
+            self.add_vlir(d[:30], d[254:508], cvt_records(d))
+        else:
+            self.add_seq(d[:30], d[254:508], d[508:])
 
     def check(self):
         """Every GEOS file's chains must add up to its directory size."""
@@ -254,6 +254,48 @@ FORMATS = {"d64": D64, "d71": D71, "d81": D81}
 
 def blocks_of(entry):
     return entry[28] | entry[29] << 8
+
+
+def cvt_records(d):
+    """The records of a VLIR CVT file. Block 3 of the file is a table of
+    (blocks, offset of the last byte used): 00 FF is an empty record, 00 00
+    the end. The data follows in blocks of 254 bytes."""
+    table = d[508:762]
+    pos = 762
+    records = []
+    for i in range(0, 254, 2):
+        blocks, last = table[i], table[i + 1]
+        if blocks == 0:
+            if last != 0xff:
+                break
+            records.append(None)
+            continue
+        size = (blocks - 1) * 254 + last - 1
+        records.append(d[pos:pos + size])
+        pos += blocks * 254
+    if pos - 254 + (last_used(table) - 1) != len(d) and pos != len(d):
+        sys.exit("VLIR CVT file: table and file size do not agree")
+    return records
+
+
+def last_used(table):
+    """offset of the last byte used in the last record of a CVT table"""
+    last = 2
+    for i in range(0, 254, 2):
+        if table[i]:
+            last = table[i + 1]
+    return last
+
+
+def copy_named(disk, src, names):
+    """Copy the GEOS files called names from the D64 src to disk."""
+    for name, e, h, body in read_d64_files(src):
+        if name not in names:
+            continue
+        if isinstance(body, list):
+            disk.add_vlir(e, h, body)
+        else:
+            disk.add_seq(e, h, body)
 
 
 def read_d64_files(path):
