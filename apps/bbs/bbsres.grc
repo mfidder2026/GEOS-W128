@@ -1,0 +1,9 @@
+; resource file for the BBS client
+
+HEADER APPLICATION "BBS" "BBS" "V1.0" {
+dostype USR
+author "GEOS-W128"
+mode 80only
+info "BBS client for the WiC64: PETSCII in 40 columns, ASCII in 80, Telnet, address book and XMODEM download."
+icon "build/icons/bbs.raw"
+}

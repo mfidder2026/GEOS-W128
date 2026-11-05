@@ -334,20 +334,25 @@ def post_w128(bd, comp, fmt, base_only=False):
     make_icon(os.path.join(app, "wic64.icon"),
               os.path.join(ROOT, "build", "icons", "wic64.raw"))
 
-    def own_app(name, res, src):
+    bbs = os.path.join(ROOT, "apps", "bbs")
+    make_icon(os.path.join(bbs, "bbs.icon"),
+              os.path.join(ROOT, "build", "icons", "bbs.raw"))
+
+    def own_app(name, res, *srcs, where=app):
         objdir = os.path.join(bd, "apps", name)
         os.makedirs(objdir, exist_ok=True)
         cvt = os.path.join(bd, name + ".cvt")
         r = subprocess.run([CL65, "-t", "geos-cbm", "-O", "--obj-path", objdir,
-                            "-o", cvt, os.path.join(app, res),
-                            os.path.join(app, src),
-                            os.path.join(ROOT, "apps", "common", "wic64.s")],
+                            "-o", cvt, os.path.join(where, res)]
+                           + [os.path.join(where, s) for s in srcs]
+                           + [os.path.join(ROOT, "apps", "common", "wic64.s")],
                            cwd=ROOT, capture_output=True, text=True, env=env)
         if r.returncode:
             sys.exit(r.stdout + r.stderr)
         disk.add_cvt(cvt)
 
     own_app("wic64", "wic64appres.grc", "wic64app.c")
+    own_app("bbs", "bbsres.grc", "bbs.c", "term.c", "xmodem.c", "vdc.s", where=bbs)
     seen = set()
     left_out = 0
     for name, files, replaces in [] if base_only else W128_EXTRA:
