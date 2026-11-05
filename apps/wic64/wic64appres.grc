@@ -1,0 +1,9 @@
+; resource file for wic64app.c
+
+HEADER APPLICATION "WiC64" "WiC64" "V1.0" {
+dostype USR
+author "GEOS-W128"
+mode 80only
+info "The WiC64 network adapter on the C128: status, WiFi, time zone and internet test."
+icon "build/icons/wic64.raw"
+}

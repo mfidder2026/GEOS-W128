@@ -153,6 +153,7 @@ endif
 ifeq ($(VARIANT), bsw128)
 	KERNAL_SOURCES += \
 	kernal/start/start128.s \
+	kernal/start/w128boot.s \
 	kernal/128k/bank_jmptab_front.s \
 	kernal/128k/banking.s \
 	kernal/128k/cbm_jmptab.s \

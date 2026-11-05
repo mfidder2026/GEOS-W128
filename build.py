@@ -238,12 +238,135 @@ def post_u64(bd, d64):
     check_geos_files(d64)
 
 
+def build_w128(a):
+    """Native C128 kernal: same steps and memory layout as the bsw128 part
+    of the Makefile, assembled with bsw128 and w128 defined."""
+    bd = os.path.join("build", "w128")
+    defs = ["-D", "bsw128=1", "-D", "w128=1", "-D", f"{a.drive}=1",
+            "-D", f"{a.input}=1"]
+    for d in a.defines:
+        defs += ["-D", d]
+    asflags = ["-I", "inc", "-I", ".", "--cpu", "6502X"]
+    mk = open(os.path.join(ROOT, "Makefile")).read()
+
+    def assemble(src):
+        obj = os.path.join(bd, src[:-2] + ".o")
+        os.makedirs(os.path.dirname(obj), exist_ok=True)
+        run([CA65] + defs + asflags + [src, "-o", obj])
+        return obj
+
+    def link(name, cfg, srcs):
+        objs = [assemble(s) for s in srcs]
+        run([LD65, "-C", cfg] + objs + ["-o", f"{bd}/kernal/{name}.bin",
+             "-m", f"{bd}/kernal/{name}.map", "-Ln", f"{bd}/kernal/{name}.lab"])
+        return open(f"{bd}/kernal/{name}.bin", "rb").read()
+
+    cond = "ifeq ($(VARIANT), bsw128)"
+    os.makedirs(os.path.join(bd, "kernal"), exist_ok=True)
+    k = link("kernal", "kernal/kernal_bsw128.cfg",
+             makefile_list(mk, "KERNAL_SOURCES") +
+             makefile_list(mk, "KERNAL_SOURCES", cond))
+    k2 = link("kernal2", "kernal/kernal2_bsw128.cfg",
+              makefile_list(mk, "KERNAL2_SOURCES"))
+    rel = link("relocator", "kernal/relocator_bsw128.cfg",
+               makefile_list(mk, "RELOCATOR_SOURCES", cond))
+    o = assemble(f"drv/{a.drive}.s")
+    os.makedirs(f"{bd}/drv", exist_ok=True)
+    run([LD65, "-C", f"drv/{a.drive}.cfg", o, "-o", f"{bd}/drv/{a.drive}.bin"])
+    drv = open(f"{bd}/drv/{a.drive}.bin", "rb").read()
+    o = assemble(f"input/{a.input}.s")
+    run([LD65, "-C", "input/inputdrv_bsw128.cfg", o, "-o",
+         f"{bd}/input/{a.input}.bin"])
+    inp = open(f"{bd}/input/{a.input}.bin", "rb").read()
+
+    pad = lambda b, n: (b + bytes(n))[:n]
+    img = b"\x00\x48" + pad(rel, 1024)          # relocator    -> $4800
+    img += pad(k, 1024)                         # $5000-$53ff  -> $4c00
+    img += pad(k[0xc000 - 0x5000:], 0x3d00)     # $c000-$fcff  -> $5000
+    img += pad(inp, 384)                        # $fd00-$fe7f  -> $8d00
+    img += pad(k[0xfe80 - 0x5000:], 384)        # $fe80-$ffff  -> $8e80
+    img += pad(drv, 3456)                       # $9000-$9d7f
+    img += pad(k[0x9d80 - 0x5000:], 640)        # $9d80-$9fff
+    img += pad(k2[0x2000:], 0x2000)             # back $e000-  -> $a000
+    img += pad(k2, 0x2000)                      # back $c000-  -> $c000
+    comb = f"{bd}/kernal_combined.prg"
+    open(comb, "wb").write(img)
+    comp = f"{bd}/kernal_compressed.prg"
+    run([EXOMIZER, "sfx", "0x4800", "-t128", "-Di_ram_exit=$3e", "-q",
+         "-o", comp, comb])
+    return bd, comb, comp
+
+
+# GEOS 128 system disks in disks/ (not in this repository), most important
+# first; what does not fit on the chosen format stays off
+W128_SOURCES = ["1a_system", "2b_apps", "3a_write_utils", "1b_demo",
+                "3b_geospell"]
+W128_DRIVERS = {"d64": "drv1541", "d71": "drv1571", "d81": "drv1581"}
+# the boot files are replaced by our kernal; deskTop would load an input
+# driver file over the built-in mouse + joystick driver
+W128_SKIP = [b"GEOS", b"GEOS BOOT", b"GEOS KERNAL"]
+W128_SKIP_TYPES = (10, 15)      # INPUT_DEVICE, INPUT_128
+W128_RESERVE = 40               # blocks kept free for the user
+
+
+def post_w128(bd, comp, fmt):
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import geosdisk as D
+    path = f"{bd}/geos-w128.{fmt}"
+    if os.path.exists(path):
+        os.remove(path)
+    run([C1541, "-format", "geos-w128,w1", fmt, path, "-write", comp,
+         "geos128"])
+    disk = D.FORMATS[fmt](path)
+    disk.make_geos_disk()
+    # our own application first: it lands on deskTop's first page
+    os.makedirs(os.path.join(ROOT, "build", "icons"), exist_ok=True)
+    env = dict(os.environ, CC65_HOME=os.path.join(TOOLS, "cc65"))
+    app = os.path.join(ROOT, "apps", "wic64")
+    make_icon(os.path.join(app, "wic64.icon"),
+              os.path.join(ROOT, "build", "icons", "wic64.raw"))
+    objdir = os.path.join(bd, "apps", "wic64")
+    os.makedirs(objdir, exist_ok=True)
+    cvt = os.path.join(bd, "wic64.cvt")
+    r = subprocess.run([CL65, "-t", "geos-cbm", "-O", "--obj-path", objdir,
+                        "-o", cvt, os.path.join(app, "wic64appres.grc"),
+                        os.path.join(app, "wic64app.c"),
+                        os.path.join(ROOT, "apps", "common", "wic64.s")],
+                       cwd=ROOT, capture_output=True, text=True, env=env)
+    if r.returncode:
+        sys.exit(r.stdout + r.stderr)
+    disk.add_cvt(cvt)
+    seen = set()
+    left_out = 0
+    for s in W128_SOURCES:
+        src = os.path.join(ROOT, "disks", f"geos_128_2_0_{s}.d64")
+        for name, e, h, body in D.read_d64_files(src):
+            key = name.upper()
+            if key in W128_SKIP or e[22] in W128_SKIP_TYPES or key in seen:
+                continue
+            seen.add(key)
+            if D.blocks_of(e) > disk.free_blocks() - W128_RESERVE:
+                left_out += 1
+                continue
+            if isinstance(body, list):
+                disk.add_vlir(e, h, body)
+            else:
+                disk.add_seq(e, h, body)
+    disk.check()
+    disk.save()
+    if left_out:
+        print(f"{left_out} files did not fit on the {fmt}")
+    return path
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("variant", nargs="?", default="bsw")
     ap.add_argument("--drive", default="drv1541")
     ap.add_argument("--input", default=None,
                     help="input driver (default: u64input for u64, else joydrv)")
+    ap.add_argument("--format", default="d71", choices=["d64", "d71", "d81"],
+                    help="w128: disk image format, picks the disk driver")
     ap.add_argument("-D", dest="defines", action="append", default=[],
                     help="extra ca65 define, e.g. -D testAutostart=1")
     a = ap.parse_args()
@@ -252,6 +375,14 @@ def main():
         a.input = "u64input" if v == "u64" else "joydrv"
     if v == "bsw128":
         sys.exit("bsw128 is not supported by build.py; use the Makefile")
+    if v == "w128":
+        a.drive = W128_DRIVERS[a.format]
+        if a.input == "joydrv":
+            a.input = "u64input"
+        bd, comb, comp = build_w128(a)
+        disk = post_w128(bd, comp, a.format)
+        print(f"*** w128: {comb}, {comp}, {disk}")
+        return
 
     mk = open(os.path.join(ROOT, "Makefile")).read()
     srcs = makefile_list(mk, "KERNAL_SOURCES")

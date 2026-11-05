@@ -38,6 +38,9 @@ E8FE8 = $8fe8
 E8FF0 = $8ff0
 
 .global _ResetHandle
+.ifdef w128
+.import W128Boot
+.endif
 
 .segment "start"
 
@@ -60,10 +63,14 @@ _ResetHandle:
 	.word $0500
 	.word dirEntryBuf
 	.byte 0
+.ifdef forceC128Mode80
+	LoadB graphMode, $80
+.else
 	lda mmu+5
 	and #%10000000
 	eor #%10000000
 	sta graphMode
+.endif
 	jsr ClrScr
 	LoadB mmu+6, %01000000
 	jsr FirstInit
@@ -102,6 +109,9 @@ Boot3:	lda $5f18,y		;5084
 Boot4:	lda cia1base+15		;509c
 	and #%01111111
 	sta cia1base+15
+.ifdef w128
+	jsr W128Boot
+.endif
 ;	LoadB cia1base+11, currentHour | (AMPM << 7)
 ;	LoadB cia1base+10, currentMinute
 ;	LoadW cia1base+8, 0
@@ -153,10 +163,14 @@ Boot6_3:
 	jsr PutDirHead
 
 Boot6_4:
+.ifdef forceC128Mode80
+	LoadB graphMode, $80
+.else
 	lda mmu+5		;511f ;.!.hint why previous?
 	and #%10000000
 	eor #%10000000
 	sta graphMode
+.endif
 	jsr SetNewMode
 	jmp Boot7
 

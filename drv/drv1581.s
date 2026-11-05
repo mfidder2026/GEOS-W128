@@ -670,7 +670,7 @@ __InitForIO:
 	sei
 	lda CPU_DATA
 	sta tmpCPU_DATA
-.ifdef bsw128
+.ifndef bsw128
 	LoadB CPU_DATA, KRNL_IO_IN
 .endif
 	lda grirqen
@@ -1467,9 +1467,9 @@ E0430:
 	jsr E03AD
 	jsr E046E
 	LoadW $7e, $0600
-	lda #>E0430-1
+	lda #>(E0430-1)
 	pha
-	lda #<E0430-1
+	lda #<(E0430-1)
 	pha
 	jmp ($04E9)
 

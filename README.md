@@ -1,6 +1,6 @@
 # GEOS Source Code
 
-> **GEOS-U64:** this fork adds a `u64` variant for the Commodore 64 Ultimate (network API, turbo, REU detection, mouse + joystick driver, settings apps). See [ULTIMATE.md](ULTIMATE.md). The original GEOS disk needed to build a bootable image is not included.
+> **GEOS-W128:** this fork adds a `w128` variant: GEOS native on the Commodore 128, in 80 columns at 2 MHz, with the WiC64 network adapter. See [W128.md](W128.md). It builds on GEOS-U64 ([ULTIMATE.md](ULTIMATE.md)). The original GEOS disks needed to build a bootable image are not in this repository.
 
 by Berkeley Softworks, reverse engineered by *Maciej Witkowiak*, *Michael Steil*.
 

@@ -21,9 +21,11 @@ config_inc = 1
 ; the Berkeley Softworks GEOS 128 2.0 variant
 ;------------------------
 .ifdef bsw128
+.ifndef w128
 	; BSW traps to counter tampering
 	traps = 1
 	trap2_alternate_location = 1
+.endif
 .endif
 
 ;------------------------
@@ -180,6 +182,15 @@ config_inc = 1
 	; the Ultimate menu: $D031 value, bits 0-3 speed index (15 = 48 MHz
 	; on U64, 64 MHz on U64E2/C64U), bit 7 = 1 badlines off
 	;ultimateBootSpeed = $8F
+.endif
+
+;------------------------
+; GEOS-W128: native Commodore 128 with a WiC64 (assembled with bsw128 too)
+;------------------------
+.ifdef w128
+	; always start in 80 columns (VDC, 640x200, 2 MHz), whatever the
+	; position of the 40/80 key
+	forceC128Mode80 = 1
 .endif
 
 ; Feel (almost) free to change values below:

@@ -23,6 +23,10 @@ SlowMouse:
 	jmp _SlowMouse
 UpdateMouse:
 	jmp _UpdateMouse
+.ifdef bsw128
+SetMouse:
+	rts
+.endif
 
 tmpFire:
 	.byte 0
@@ -97,7 +101,7 @@ _UpdateMouse:
 	; 1351: select the pots of port 1 and let the SID sample them
 @mouse:	LoadB cia1base+2, $ff
 	LoadB cia1base+0, $40
-.ifdef ultimateTurbo
+.if .defined(ultimateTurbo) || .defined(w128)
 	lda clkreg              ; ~1 ms of real time, also in turbo mode
 	pha
 	LoadB clkreg, 0
@@ -108,7 +112,7 @@ _UpdateMouse:
 	nop
 	dex
 	bne @wait
-.ifdef ultimateTurbo
+.if .defined(ultimateTurbo) || .defined(w128)
 	pla
 	sta clkreg
 .endif
