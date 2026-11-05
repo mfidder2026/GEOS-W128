@@ -309,10 +309,10 @@ W128_SKIP_TYPES = (10, 15)      # INPUT_DEVICE, INPUT_128
 W128_RESERVE = 40               # blocks kept free for the user
 
 
-def post_w128(bd, comp, fmt):
+def post_w128(bd, comp, fmt, base_only=False):
     sys.path.insert(0, os.path.join(ROOT, "tools"))
     import geosdisk as D
-    path = f"{bd}/geos-w128.{fmt}"
+    path = f"{bd}/geos-w128{'-base' if base_only else ''}.{fmt}"
     if os.path.exists(path):
         os.remove(path)
     run([C1541, "-format", "geos-w128,w1", fmt, path, "-write", comp,
@@ -338,7 +338,7 @@ def post_w128(bd, comp, fmt):
     disk.add_cvt(cvt)
     seen = set()
     left_out = 0
-    for s in W128_SOURCES:
+    for s in [] if base_only else W128_SOURCES:
         src = os.path.join(ROOT, "disks", f"geos_128_2_0_{s}.d64")
         for name, e, h, body in D.read_d64_files(src):
             key = name.upper()
@@ -367,6 +367,9 @@ def main():
                     help="input driver (default: u64input for u64, else joydrv)")
     ap.add_argument("--format", default="d71", choices=["d64", "d71", "d81"],
                     help="w128: disk image format, picks the disk driver")
+    ap.add_argument("--base-only", action="store_true",
+                    help="w128: only our kernal and application, no files "
+                         "from the GEOS disks in disks/")
     ap.add_argument("-D", dest="defines", action="append", default=[],
                     help="extra ca65 define, e.g. -D testAutostart=1")
     a = ap.parse_args()
@@ -380,7 +383,7 @@ def main():
         if a.input == "joydrv":
             a.input = "u64input"
         bd, comb, comp = build_w128(a)
-        disk = post_w128(bd, comp, a.format)
+        disk = post_w128(bd, comp, a.format, a.base_only)
         print(f"*** w128: {comb}, {comp}, {disk}")
         return
 
