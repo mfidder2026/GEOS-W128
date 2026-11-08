@@ -1,6 +1,7 @@
 /* WiCTest - checks the WiC64 driver: every command the applications use,
    large transfers byte for byte, a response larger than the buffer, an error
-   status, and the time zone. Prints PASS/FAIL per test, for 640x200. */
+   status, and the time zone. Prints PASS/FAIL per test: in 80 columns two
+   columns of 15, in 40 two narrow columns of 12. */
 
 #include <geos.h>
 #include <string.h>
@@ -9,11 +10,12 @@
 
 #define WIC_FORCE_ERROR 0xfd
 #define WIC_ECHO        0xfe
+#define rightMargin     (*(unsigned *)0x37)
 
 static char rx[1100];
 static char tx[1024];
 static char line[80];
-static unsigned char row, col, failed, passed;
+static unsigned char row, col, failed, passed, wide;
 static struct window box = { 0, 199, 0, 639 };
 
 unsigned char __fastcall__ wic_call(unsigned char command, const char *out,
@@ -35,12 +37,15 @@ static void __fastcall__ report(const char *name, unsigned char ok,
 {
     sprintf(line, "%s %s: %.26s", ok ? "PASS" : CBOLDON "FAIL" CPLAINTEXT,
             name, info);
-    PutString(line, 26 + row * 11, col ? 330 : 8);
+    if (!wide)                  /* 40 columns: clip at the column edge */
+        rightMargin = col ? 319 : 157;
+    PutString(line, 26 + row * 11, col ? (wide ? 330 : 162) : (wide ? 8 : 4));
+    rightMargin = wide ? 639 : 319;
     if (ok)
         ++passed;
     else
         ++failed;
-    if (++row == 15) {
+    if (++row == (wide ? 15 : 12)) {
         row = 0;
         col = 1;
     }
@@ -83,6 +88,9 @@ void main(void)
     unsigned tries;
     unsigned char st;
 
+    wide = graphMode & 0x80;
+    if (!wide)
+        box.right = 319;
     dispBufferOn = ST_WR_FORE | ST_WR_BACK;
     InitDrawWindow(&box);
     SetPattern(0);

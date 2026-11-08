@@ -301,7 +301,10 @@ def build_w128(a):
 # first; what does not fit on the chosen format stays off
 W128_SOURCES = ["1a_system", "2b_apps", "3a_write_utils",
                 "3b_geospell"]
-W128_DRIVERS = {"d64": "drv1541", "d71": "drv1571", "d81": "drv1581"}
+# d64set: the set with the 1571 driver (the 128D has a 1571 built in), plus
+# a second boot disk with the 1541 driver for an external 1541
+W128_DRIVERS = {"d64": "drv1541", "d64set": "drv1571", "d71": "drv1571",
+                "d81": "drv1581"}
 # the boot files are replaced by our kernal; deskTop would load an input
 # driver file over the built-in mouse + joystick driver
 W128_SKIP = [b"GEOS", b"GEOS BOOT", b"GEOS KERNAL"]
@@ -315,6 +318,159 @@ W128_EXTRA = [
     ("GEOS - Geopaint128 (19xx)(-).d64", [b"GeoPaint 128"], [b"GEOPAINT"]),
     ("GeoCalc 128.d64", [b"GEOCALC 128", b"New Car"], []),
 ]
+
+
+# a set of D64 disks: (disk name, ID, files by the start of their name). A
+# file may be on more than one disk; what is on none goes to the extra disks
+# at the end. Disk 1 also gets the kernal and our applications.
+W128_D64SET = [
+    ("geos-w128 boot", "w1", ["128 DESKTOP", "128 CONFIGURE", "COMM. COMPAT.",
+                              "PREFERENCE MGR", "PAD COLOR MGR", "ALARM CLOCK",
+                              "CALCULATOR", "NOTE PAD", "PHOTO MANAGER",
+                              "TEXT MANAGER", "128 RBOOT"]),
+    # only the three applications: geoPaint warns below about 100 free blocks
+    ("geos-w128 apps", "w2", ["GEOWRITE 128", "GEOPAINT 128", "GEOCALC 128",
+                              "COMM. COMPAT."]),
+    ("geos-w128 write", "w3", ["GEOSPELL 128", "GEODICTIONARY", "GEOMERGE",
+                               "TEXT GRABBER 128", "COMM. COMPAT.",
+                               "CALIFORNIA", "ROMA"]),
+]
+W128_SET_RESERVE = [50, 20, 10]   # blocks kept free per disk; then 20
+
+
+def own_apps(bd):
+    """our applications as CVT files: WiC64, BBS, WiCTest"""
+    os.makedirs(os.path.join(ROOT, "build", "icons"), exist_ok=True)
+    env = dict(os.environ, CC65_HOME=os.path.join(TOOLS, "cc65"))
+    app = os.path.join(ROOT, "apps", "wic64")
+    bbs = os.path.join(ROOT, "apps", "bbs")
+    make_icon(os.path.join(app, "wic64.icon"),
+              os.path.join(ROOT, "build", "icons", "wic64.raw"))
+    make_icon(os.path.join(bbs, "bbs.icon"),
+              os.path.join(ROOT, "build", "icons", "bbs.raw"))
+    out = []
+    for name, where, res, srcs in [
+            ("wic64", app, "wic64appres.grc", ["wic64app.c"]),
+            ("bbs", bbs, "bbsres.grc", ["bbs.c", "term.c", "xmodem.c", "vdc.s"]),
+            ("wictest", app, "wictestres.grc", ["wictest.c"])]:
+        objdir = os.path.join(bd, "apps", name)
+        os.makedirs(objdir, exist_ok=True)
+        cvt = os.path.join(bd, name + ".cvt")
+        r = subprocess.run([CL65, "-t", "geos-cbm", "-O", "--obj-path", objdir,
+                            "-o", cvt, os.path.join(where, res)]
+                           + [os.path.join(where, s) for s in srcs]
+                           + [os.path.join(ROOT, "apps", "common", "wic64.s")],
+                           cwd=ROOT, capture_output=True, text=True, env=env)
+        if r.returncode:
+            sys.exit(r.stdout + r.stderr)
+        out.append(cvt)
+    return out
+
+
+def file_pool(D):
+    """All files from disks/extra/ and the GEOS disks by upper case name, in
+    order, without the boot files: (entry, header, data or records)."""
+    pool = {}
+    seen = set()
+    for name, files, replaces in W128_EXTRA:
+        src = os.path.join(ROOT, "disks", "extra", name)
+        if not os.path.exists(src):
+            continue
+        if files is None:
+            d = open(src, "rb").read()
+            body = D.cvt_records(d) if d[21] else d[508:]
+            key = bytes(d[3:19]).split(bytes([0xa0]))[0].upper()
+            pool[key] = (d[:30], d[254:508], body)
+        else:
+            for n, e, h, body in D.read_d64_files(src):
+                if n in files:
+                    pool[n.upper()] = (e, h, body)
+        seen.update(n.upper() for n in replaces)
+    for s in W128_SOURCES:
+        src = os.path.join(ROOT, "disks", f"geos_128_2_0_{s}.d64")
+        for name, e, h, body in D.read_d64_files(src):
+            key = name.upper()
+            if key in W128_SKIP or e[22] in W128_SKIP_TYPES or key in seen \
+                    or key in pool:
+                continue
+            pool[key] = (e, h, body)
+    return pool
+
+
+def boot_sector(disk, title, comp):
+    """C128 boot sector in 1/0: at power on (or BOOT) the C128 shows
+    "BOOTING <title>...", loads the file named after the title (GEOS128) at
+    its own address, and runs the code after it: a jump to the address in
+    the SYS line of the decruncher."""
+    m = re.search(rb"\x9e *(\d+)", open(comp, "rb").read()[:40])
+    if not m:
+        sys.exit(f"{comp}: no SYS line")
+    start = int(m.group(1))
+    if not disk.is_free(1, 0):
+        sys.exit("track 1 sector 0 is in use: no room for the boot sector")
+    disk.claim(1, 0)
+    sec = (b"CBM" + bytes(4) + title + b"\0" + b"GEOS128\0"
+           + bytes([0x4c, start & 255, start >> 8]))
+    o = disk.off(1, 0)
+    disk.img[o:o + 256] = sec.ljust(256, bytes(1))
+
+
+def add_file(disk, f):
+    e, h, body = f
+    if isinstance(body, list):
+        disk.add_vlir(e, h, body)
+    else:
+        disk.add_seq(e, h, body)
+
+
+def post_w128_set(bd, comp, first_only=False, tag=""):
+    """geos-w128-1.d64, -2, ...: the whole system on D64 disks; first_only:
+    only the boot disk, as geos-w128-1<tag>.d64"""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import geosdisk as D
+    pool = file_pool(D)
+    placed = set()
+    plan = [(label, did, [k for w in wanted for k in pool
+                          if k.startswith(w.encode())])
+            for label, did, wanted in W128_D64SET]
+    paths = []
+    n = 0
+    while True:
+        if n < len(plan):
+            label, did, files = plan[n]
+        else:
+            files = [k for k in pool if k not in placed]
+            if not files:
+                break
+            label, did = f"geos-w128 extra{n - len(plan) + 1}", f"w{n + 1}"
+        path = f"{bd}/geos-w128-{n + 1}{tag}.d64"
+        if os.path.exists(path):
+            os.remove(path)
+        args = [C1541, "-format", f"{label},{did}", "d64", path]
+        if n == 0:
+            args += ["-write", comp, "geos128"]
+        run(args)
+        disk = D.D64(path)
+        if n == 0:
+            boot_sector(disk, b"GEOS-W128", comp)
+        disk.make_geos_disk()
+        if n == 0:
+            for cvt in own_apps(bd):
+                disk.add_cvt(cvt)
+        reserve = W128_SET_RESERVE[n] if n < len(W128_SET_RESERVE) else 20
+        for k in files:
+            if D.blocks_of(pool[k][0]) <= disk.free_blocks() - reserve:
+                add_file(disk, pool[k])
+                placed.add(k)
+        disk.check()
+        disk.save()
+        paths.append(path)
+        n += 1
+        if first_only:
+            break
+        if n > 9:
+            sys.exit("more than 10 disks: something does not fit at all")
+    return paths
 
 
 def post_w128(bd, comp, fmt, base_only=False):
@@ -392,8 +548,10 @@ def main():
     ap.add_argument("--drive", default="drv1541")
     ap.add_argument("--input", default=None,
                     help="input driver (default: u64input for u64, else joydrv)")
-    ap.add_argument("--format", default="d71", choices=["d64", "d71", "d81"],
-                    help="w128: disk image format, picks the disk driver")
+    ap.add_argument("--format", default="d71",
+                    choices=["d64", "d64set", "d71", "d81"],
+                    help="w128: disk image format, picks the disk driver; "
+                         "d64set = the whole system on several D64 disks")
     ap.add_argument("--base-only", action="store_true",
                     help="w128: only our kernal and application, no files "
                          "from the GEOS disks in disks/")
@@ -407,10 +565,19 @@ def main():
         sys.exit("bsw128 is not supported by build.py; use the Makefile")
     if v == "w128":
         a.drive = W128_DRIVERS[a.format]
+        if a.format == "d64set" and "w128key=1" not in a.defines:
+            a.defines.append("w128key=1")   # real C128s: the 40/80 key decides
         if a.input == "joydrv":
             a.input = "u64input"
         bd, comb, comp = build_w128(a)
-        disk = post_w128(bd, comp, a.format, a.base_only)
+        if a.format == "d64set" and not a.base_only:
+            disk = ", ".join(post_w128_set(bd, comp))
+            a.drive = "drv1541"
+            bd, comb, comp = build_w128(a)
+            disk += ", " + post_w128_set(bd, comp, True, "-1541")[0]
+        else:
+            disk = post_w128(bd, comp, "d64" if a.format == "d64set"
+                             else a.format, a.base_only)
         print(f"*** w128: {comb}, {comp}, {disk}")
         return
 

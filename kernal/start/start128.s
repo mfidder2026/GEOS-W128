@@ -151,6 +151,12 @@ Boot6_3:
 	dey
 	bpl Boot6_3
 	PopB mmu+6
+.ifdef w128
+	; one drive before the first disk access, as start64 does: the 1541
+	; driver leaves the last 32 bytes of its drive code off while NUMDRV is
+	; 0, and the drive then crashes in its motor-on routine
+	LoadB NUMDRV, 1
+.endif
 	jsr OpenDisk
 	jsr GetDirHead
 	bnex Boot6_4

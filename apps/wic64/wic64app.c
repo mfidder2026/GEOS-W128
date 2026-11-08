@@ -1,8 +1,9 @@
-/* WiC64 - the WiC64 network adapter under GEOS 128, in 80 columns.
+/* WiC64 - the WiC64 network adapter under GEOS 128, in 40 or 80 columns.
 
    Shows firmware, WiFi connection, address, signal and time; connects to a
    WiFi network, sets the time zone and tests the internet with a real HTTP
-   request and a TCP connection. Screen coordinates are for 640x200. */
+   request and a TCP connection. Screen coordinates are for 640x200; X()
+   halves them in 40 columns. Text keeps its size, so it must fit in 320. */
 
 #include <geos.h>
 #include <string.h>
@@ -13,14 +14,15 @@
 #define ROW0    48
 #define ROWH    12
 #define LABELX  32
-#define VALX    208
+#define VALX    272
+#define X(v)    (wide ? (v) : (v) >> 1)
 #define VALLEN  48
 
 enum { R_FIRM, R_CONN, R_SSID, R_IP, R_MAC, R_RSSI, R_TIME, R_ZONE, ROWS };
 
 static const char *const labels[ROWS] = {
     "Firmware", "WiFi", "Network (SSID)", "IP address", "MAC address",
-    "Signal (RSSI)", "Time on the WiC64", "Time zone (GMT offset)"
+    "Signal (RSSI)", "Time (WiC64)", "Time zone"
 };
 
 static char values[ROWS][VALLEN];
@@ -28,6 +30,7 @@ static char rx[160];
 static char line[80];
 static char ssid[33], pass[64], zone[3];
 static struct window box;
+static unsigned char wide;      /* 80 columns */
 
 unsigned char __fastcall__ wic_call(unsigned char command, const char *tx,
                                     unsigned txlen, char *out, unsigned size)
@@ -48,8 +51,8 @@ static void __fastcall__ fill(char top, char bot, unsigned left,
 {
     box.top = top;
     box.bot = bot;
-    box.left = left;
-    box.right = right;
+    box.left = X(left);
+    box.right = X(right);
     InitDrawWindow(&box);
     SetPattern(pattern);
     Rectangle();
@@ -58,7 +61,7 @@ static void __fastcall__ fill(char top, char bot, unsigned left,
 static void __fastcall__ message(const char *text)
 {
     fill(180, 193, 16, 623, 0);
-    PutString((char *)text, 190, 24);
+    PutString((char *)text, 190, X(24));
 }
 
 static void __fastcall__ draw_row(unsigned char i)
@@ -66,7 +69,7 @@ static void __fastcall__ draw_row(unsigned char i)
     char y = ROW0 + i * ROWH;
 
     fill(y - 8, y + 2, VALX, 623, 0);
-    PutString(values[i], y, VALX);
+    PutString(values[i], y, X(VALX));
 }
 
 /* the reason for a failed command, as the WiC64 reports it */
@@ -171,7 +174,7 @@ static void test_http(void)
         message(reason(st));
         return;
     }
-    rx[60] = 0;
+    rx[wide ? 60 : 36] = 0;
     sprintf(line, "HTTP OK: %s", rx);
     if (strchr(line, '\n'))
         *strchr(line, '\n') = 0;
@@ -258,14 +261,16 @@ void main(void)
 {
     unsigned char i;
 
+    wide = graphMode & 0x80;
     dispBufferOn = ST_WR_FORE | ST_WR_BACK;
-    fill(15, 199, 0, 639, 0);
+    fill(0, 199, 0, 639, 0);        /* from the top: no deskTop menu left */
     fill(16, 198, 8, 631, 9);
     fill(20, 176, 16, 623, 0);
     fill(180, 193, 16, 623, 0);
-    PutString(CBOLDON "WiC64" CPLAINTEXT "  network adapter on the C128", 32, 24);
+    PutString(CBOLDON "WiC64" CPLAINTEXT "  network adapter on the C128", 32,
+              X(24));
     for (i = 0; i < ROWS; ++i)
-        PutString((char *)labels[i], ROW0 + i * ROWH, LABELX);
+        PutString((char *)labels[i], ROW0 + i * ROWH, X(LABELX));
     DoMenu(&mainMenu);
     reload();
 #ifdef WIC_SELFTEST             /* VICE test without clicking: 1 HTTP, 2 TCP */

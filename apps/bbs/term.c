@@ -2,7 +2,8 @@
 
    CONNECT goes to a full screen terminal in VDC text mode: rows 0-23 text,
    row 24 status. PETSCII BBSes get 40 columns in colour, as they expect;
-   ASCII BBSes get the full 80. Received bytes go through the Telnet parser to
+   ASCII BBSes get the full 80. In 40 column GEOS it is the VIC in text mode,
+   40 columns for both. Received bytes go through the Telnet parser to
    the screen; keys go to the BBS as PETSCII, F7 opens the session menu. */
 
 #include <geos.h>
@@ -677,8 +678,8 @@ static void reset(void)
     unsigned char i;
     unsigned a = 0;
 
-    tmCols = bb_mode(cfgDefault) == BM_ASCII ? 80 : 40;
-    tmAscii = tmCols == 80;
+    tmAscii = bb_mode(cfgDefault) == BM_ASCII;
+    tmCols = tmAscii && (graphMode & 0x80) ? 80 : 40;
     tmLower = 1;                /* start in upper/lower case */
     for (i = 0; i < 25; ++i) {
         rowTab[i] = a;
@@ -706,6 +707,8 @@ static void enter(void)
     intTopVector = frame_tick;
     vdc_enter(tmCols);
     vdc_font();
+    if (!(graphMode & 0x80))
+        vdc_case(tmLower, 0);   /* the VIC: one font for the whole screen */
     vdc_fill(rowTab[TM_STAT], 0xa0, tmCols);
     cls();
     tm_status("");

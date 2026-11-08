@@ -1,4 +1,6 @@
-/* GEOS-W128 BBS client for the WiC64, in 80 columns on GEOS 128.
+/* GEOS-W128 BBS client for the WiC64, in 40 or 80 columns on GEOS 128.
+   Screen positions are for 640 wide; X() halves them in 40 columns, where
+   the text keeps its size and so must fit in 320.
 
    The main screen shows the default BBS, with buttons for CONNECT, DISCONNECT,
    ADDRESS BOOK, LOCAL ECHO and BACK TO DESKTOP, as on Commodore Desk 64. The
@@ -17,6 +19,8 @@
 #define mouseYPos (*(unsigned char *)0x3c)
 #define BOOK_VERSION 1
 #define CFG_VERSION 1
+#define X(v) (wide ? (v) : (v) >> 1)
+static unsigned char wide;      /* 80 columns */
 
 struct rec {
     char name[BK_NAMEMAX + 1];
@@ -174,8 +178,8 @@ static void __fastcall__ fill(char top, char bot, unsigned l, unsigned r,
 {
     box.top = top;
     box.bot = bot;
-    box.left = l;
-    box.right = r;
+    box.left = X(l);
+    box.right = X(r);
     InitDrawWindow(&box);
     SetPattern(pattern);
     Rectangle();
@@ -185,8 +189,8 @@ static void __fastcall__ frame(char top, char bot, unsigned l, unsigned r)
 {
     box.top = top;
     box.bot = bot;
-    box.left = l;
-    box.right = r;
+    box.left = X(l);
+    box.right = X(r);
     InitDrawWindow(&box);
     FrameRectangle(0xff);
 }
@@ -195,19 +199,20 @@ static void __fastcall__ button(char y, unsigned x, unsigned w, const char *t)
 {
     fill(y, y + 12, x, x + w, 0);
     frame(y, y + 12, x, x + w);
-    PutString((char *)t, y + 9, x + 8);
+    PutString((char *)t, y + 9, X(x) + 8);
 }
 
 static const char *__fastcall__ mode_text(unsigned char m)
 {
     return m == BM_DIRECTORY ? "Directory (info only)" :
-           m == BM_ASCII ? "ASCII, 80 columns" :
+           m == BM_ASCII ? (wide ? "ASCII, 80 columns" : "ASCII, 40 columns") :
            m == BM_AUTO ? "Auto (PETSCII, 40 columns)" : "PETSCII, 40 columns";
 }
 
 enum { B_CONNECT, B_DISC, B_BOOK, B_ECHO, B_BACK, BTNS };
 #define BTNX 32
-#define BTNW 160
+#define VALX 200
+#define BTNW 200
 static const char btnY[BTNS] = { 96, 112, 128, 144, 160 };
 static const char *const btnText[BTNS] = {
     "Connect", "Disconnect", "Address book", "Local echo", "Back to deskTop"
@@ -217,13 +222,13 @@ static void show_msg(void)
 {
     fill(180, 193, 16, 623, 0);
     if (bbMessage)
-        PutString((char *)bbMessage, 190, 24);
+        PutString((char *)bbMessage, 190, X(24));
 }
 
 static void show_echo(void)
 {
     fill(btnY[B_ECHO], btnY[B_ECHO] + 12, BTNX + BTNW + 8, BTNX + BTNW + 60, 0);
-    PutString(cfgEcho ? "on" : "off", btnY[B_ECHO] + 9, BTNX + BTNW + 12);
+    PutString(cfgEcho ? "on" : "off", btnY[B_ECHO] + 9, X(BTNX + BTNW + 12));
 }
 
 static void draw_main(void)
@@ -231,29 +236,31 @@ static void draw_main(void)
     unsigned char i, d = cfgDefault;
 
     inBook = 0;
-    dispBufferOn = ST_WR_FORE;
+    /* 40 columns: the background buffer too, so menus can restore what they
+       cover (the terminal used it as its receive buffer) */
+    dispBufferOn = wide ? ST_WR_FORE : ST_WR_FORE | ST_WR_BACK;
     fill(0, 199, 0, 639, 0);
     fill(16, 198, 8, 631, 9);
     fill(20, 176, 16, 623, 0);
     fill(180, 193, 16, 623, 0);
-    PutString(CBOLDON "BBS" CPLAINTEXT "  through the WiC64", 32, 32);
-    PutString("Default BBS:", 48, 32);
-    PutString((char *)bb_name(d), 48, 160);
+    PutString(CBOLDON "BBS" CPLAINTEXT "  through the WiC64", 32, X(32));
+    PutString("Default BBS:", 48, X(32));
+    PutString((char *)bb_name(d), 48, X(VALX));
     if (bb_mode(d) == BM_DIRECTORY)
         strcpy(text, bb_host(d));
     else
         sprintf(text, "%s:%u", bb_host(d), bb_port(d));
-    PutString("Host:", 60, 32);
-    PutString(text, 60, 160);
-    PutString("Terminal:", 72, 32);
-    PutString((char *)mode_text(bb_mode(d)), 72, 160);
-    PutString("Status:", 84, 32);
-    PutString((char *)status, 84, 160);
+    PutString("Host:", 60, X(32));
+    PutString(text, 60, X(VALX));
+    PutString("Terminal:", 72, X(32));
+    PutString((char *)mode_text(bb_mode(d)), 72, X(VALX));
+    PutString("Status:", 84, X(32));
+    PutString((char *)status, 84, X(VALX));
     for (i = 0; i < BTNS; ++i)
         button(btnY[i], BTNX, BTNW, btnText[i]);
     show_echo();
     show_msg();
-    PutString("Keys: C, D, A, E, Q", 170, 400);
+    PutString("Keys: C, D, A, E, Q", 170, X(400));
 }
 
 /* ------------------------------------------------------ the actions -- */
@@ -302,7 +309,7 @@ static void quit_app(void)
 #define BK_TOP   34
 #define BK_STEP  10
 enum { K_ADD, K_EDIT, K_DEL, K_BACK, KBTNS };
-#define KX 440
+#define KX 456
 #define KW 120
 static const char kY[KBTNS] = { 40, 58, 76, 112 };
 static const char *const kText[KBTNS] = { "Add", "Edit", "Delete", "Back" };
@@ -315,26 +322,28 @@ static void draw_book(void)
     fill(0, 199, 0, 639, 0);
     fill(16, 198, 8, 631, 9);
     fill(20, 193, 16, 623, 0);
-    PutString(CBOLDON "BBS address book" CPLAINTEXT, 30, 32);
+    PutString(CBOLDON "BBS address book" CPLAINTEXT, 30, X(32));
     for (i = 0; i < n; ++i) {
         y = BK_TOP + i * BK_STEP + 8;
         if (i == cfgDefault)
-            PutString(">", y, 24);
+            PutString(">", y, X(24));
         if (i >= BBS_COUNT)
-            PutString(CBOLDON, y, 40);
-        PutString((char *)bb_name(i), y, 40);
+            PutString(CBOLDON, y, X(40));
+        PutString((char *)bb_name(i), y, X(40));
         if (bb_mode(i) == BM_DIRECTORY)
-            PutString(CPLAINTEXT " (info only)", y, 220);
+            PutString(wide ? CPLAINTEXT " (info only)" : CPLAINTEXT " info", y,
+                      X(272));
         else
             PutString(bb_mode(i) == BM_ASCII ? CPLAINTEXT " ASCII" : CPLAINTEXT " PETSCII",
-                      y, 220);
-        PutString(CPLAINTEXT, y, 40);
+                      y, X(272));
+        PutString(CPLAINTEXT, y, X(40));
     }
     for (i = 0; i < KBTNS; ++i)
         button(kY[i], KX, KW, kText[i]);
-    PutString("Click a BBS: new default", 150, KX - 16);
+    PutString(wide ? "Click a BBS: new default" : "Click: default", 150,
+              X(KX) - 8);
     if (bbMessage)
-        PutString((char *)bbMessage, 170, KX - 16);
+        PutString((char *)bbMessage, 170, X(KX) - 8);
 }
 
 /* the form, in GEOS dialogs; 1 = saved */
@@ -400,11 +409,11 @@ static void book_button(unsigned char b)
     }
     if (b == K_ADD) {
         if (book.count >= BBS_CUSTOM)
-            bbMessage = "The address book is full";
+            bbMessage = "Book is full";
         else
             form(book.count, 1);
     } else if (cfgDefault < BBS_COUNT) {
-        bbMessage = "Only your own BBS can change";
+        bbMessage = "Not a BBS of yours";
     } else if (b == K_EDIT) {
         form(cfgDefault - BBS_COUNT, 0);
     } else {
@@ -432,13 +441,13 @@ static void pressed(void)
     if (mouseData & 0x80)       /* released */
         return;
     if (inBook) {
-        if (x >= KX && x <= KX + KW)
+        if (x >= X(KX) && x <= X(KX + KW))
             for (i = 0; i < KBTNS; ++i)
                 if (y >= kY[i] && y <= kY[i] + 12) {
                     book_button(i);
                     return;
                 }
-        if (x < KX - 24 && y >= BK_TOP) {
+        if (x < X(KX - 24) && y >= BK_TOP) {
             i = (y - BK_TOP) / BK_STEP;
             if (i < count()) {
                 cfgDefault = i;
@@ -449,7 +458,7 @@ static void pressed(void)
         }
         return;
     }
-    if (x < BTNX || x > BTNX + BTNW)
+    if (x < X(BTNX) || x > X(BTNX + BTNW))
         return;
     for (i = 0; i < BTNS; ++i)
         if (y >= btnY[i] && y <= btnY[i] + 12)
@@ -615,6 +624,7 @@ void main(void)
     book.count = 1;
     cfgDefault = BBS_COUNT;
 #endif
+    wide = graphMode & 0x80;
     dispBufferOn = ST_WR_FORE;
     draw_main();
     DoMenu(&mainMenu);
