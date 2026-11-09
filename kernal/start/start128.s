@@ -65,6 +65,8 @@ _ResetHandle:
 	.byte 0
 .ifdef forceC128Mode80
 	LoadB graphMode, $80
+.elseif .defined(forceC128Mode40)
+	LoadB graphMode, 0
 .else
 	lda mmu+5
 	and #%10000000
@@ -171,6 +173,8 @@ Boot6_3:
 Boot6_4:
 .ifdef forceC128Mode80
 	LoadB graphMode, $80
+.elseif .defined(forceC128Mode40)
+	LoadB graphMode, 0
 .else
 	lda mmu+5		;511f ;.!.hint why previous?
 	and #%10000000

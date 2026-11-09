@@ -303,7 +303,8 @@ W128_SOURCES = ["1a_system", "2b_apps", "3a_write_utils",
                 "3b_geospell"]
 # d64set: the set with the 1571 driver (the 128D has a 1571 built in), plus
 # a second boot disk with the 1541 driver for an external 1541
-W128_DRIVERS = {"d64": "drv1541", "d64set": "drv1571", "d71": "drv1571",
+W128_DRIVERS = {"d64": "drv1541", "d64set": "drv1571", "d64test": "drv1571",
+                "d71": "drv1571",
                 "d81": "drv1581"}
 # the boot files are replaced by our kernal; deskTop would load an input
 # driver file over the built-in mouse + joystick driver
@@ -335,6 +336,8 @@ W128_D64SET = [
                                "TEXT GRABBER 128", "COMM. COMPAT.",
                                "CALIFORNIA", "ROMA"]),
 ]
+# d64test: one boot disk for a C128D, always in 40 columns
+W128_D64TEST = [("geos-w128 test", "w1", ["128 DESKTOP"])]
 W128_SET_RESERVE = [50, 20, 10]   # blocks kept free per disk; then 20
 
 
@@ -423,7 +426,7 @@ def add_file(disk, f):
         disk.add_seq(e, h, body)
 
 
-def post_w128_set(bd, comp, first_only=False, tag=""):
+def post_w128_set(bd, comp, first_only=False, tag="", disks=W128_D64SET):
     """geos-w128-1.d64, -2, ...: the whole system on D64 disks; first_only:
     only the boot disk, as geos-w128-1<tag>.d64"""
     sys.path.insert(0, os.path.join(ROOT, "tools"))
@@ -432,7 +435,7 @@ def post_w128_set(bd, comp, first_only=False, tag=""):
     placed = set()
     plan = [(label, did, [k for w in wanted for k in pool
                           if k.startswith(w.encode())])
-            for label, did, wanted in W128_D64SET]
+            for label, did, wanted in disks]
     paths = []
     n = 0
     while True:
@@ -549,9 +552,10 @@ def main():
     ap.add_argument("--input", default=None,
                     help="input driver (default: u64input for u64, else joydrv)")
     ap.add_argument("--format", default="d71",
-                    choices=["d64", "d64set", "d71", "d81"],
+                    choices=["d64", "d64set", "d64test", "d71", "d81"],
                     help="w128: disk image format, picks the disk driver; "
-                         "d64set = the whole system on several D64 disks")
+                         "d64set = the whole system on several D64 disks, "
+                         "d64test = one boot disk in 40 columns")
     ap.add_argument("--base-only", action="store_true",
                     help="w128: only our kernal and application, no files "
                          "from the GEOS disks in disks/")
@@ -567,9 +571,17 @@ def main():
         a.drive = W128_DRIVERS[a.format]
         if a.format == "d64set" and "w128key=1" not in a.defines:
             a.defines.append("w128key=1")   # real C128s: the 40/80 key decides
+        if a.format == "d64test" and "w128force40=1" not in a.defines:
+            a.defines.append("w128force40=1")
         if a.input == "joydrv":
             a.input = "u64input"
         bd, comb, comp = build_w128(a)
+        if a.format == "d64test":
+            path = post_w128_set(bd, comp, True, disks=W128_D64TEST)[0]
+            disk = path.replace("-1.d64", "-test40.d64")
+            os.replace(path, disk)
+            print(f"*** w128: {comb}, {comp}, {disk}")
+            return
         if a.format == "d64set" and not a.base_only:
             disk = ", ".join(post_w128_set(bd, comp))
             a.drive = "drv1541"

@@ -190,8 +190,11 @@ config_inc = 1
 .ifdef w128
 	; always start in 80 columns (VDC, 640x200, 2 MHz), whatever the
 	; position of the 40/80 key; with w128key the key decides, as in the
-	; original GEOS 128 (up: 40 columns on the VIC, down: 80 on the VDC)
-.ifndef w128key
+	; original GEOS 128 (up: 40 columns on the VIC, down: 80 on the VDC);
+	; with w128force40 always 40 columns, for a monitor on the video output
+.ifdef w128force40
+	forceC128Mode40 = 1
+.elseif !.defined(w128key)
 	forceC128Mode80 = 1
 .endif
 .endif
